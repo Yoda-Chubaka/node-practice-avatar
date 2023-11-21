@@ -1,31 +1,50 @@
-const express = require('express');
-const logger = require('morgan');
-const cors = require('cors');
-require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
 const multer = require("multer");
+const path = require("path");
+const fs = require("fs/promises");
+const {nanoid} = require("nanoid");
 
-const authRouter = require("./routes/api/auth");
-const booksRouter = require("./routes/api/books")
+const app = express();
 
-const app = express()
+app.use(cors());
+app.use(express.json());
+app.use(express.static("public"));
 
-const formatsLogger = app.get('env') === 'development' ? 'dev' : 'short'
+const tempDir = path.join(__dirname, "temp");
 
-app.use(logger(formatsLogger))
-app.use(cors())
-app.use(express.json())
-app.use(express.static("public"))
+const multerConfig = multer.diskStorage({
+    destination: tempDir,
+    filename: (req, file, cb) =>{
+        cb(null, file.originalname);
+    }
+});
 
-app.use("/api/auth", authRouter)
-app.use("/api/books", booksRouter)
-
-app.use((req, res) => {
-  res.status(404).json({ message: 'Not found' })
+const upload = multer({
+    storage: multerConfig
 })
 
-app.use((err, req, res, next) => {
-  const {status = 500, message = "Server error"} = err;
-  res.status(status).json({ message, })
+const books = [];
+
+app.get("/api/books", (req, res)=> {
+    res.json(books);
+})
+// upload.fields([{name: "cover", maxCount: 1}, {name: "subcover", maxCount: 2}])
+// upload.array("cover", 8)
+const booksDir = path.join(__dirname, "public", "books");
+app.post("/api/books", upload.single("cover"), async(req, res)=> {
+    const {path: tempUpload, originalname} = req.file;
+    const resultUpload = path.join(booksDir, originalname);
+    await fs.rename(tempUpload, resultUpload);
+    const cover = path.join("books", originalname);
+    const newBook = {
+        id: nanoid(),
+        ...req.body,
+        cover,
+    };
+    books.push(newBook);
+
+    res.status(201).json(newBook)
 })
 
-module.exports = app
+app.listen(3000);
